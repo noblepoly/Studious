@@ -1,9 +1,11 @@
+import 'services/settings_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/material.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env"); // Loads your secrets!
+  await SettingsService.init();
   runApp(const MyApp());
 }
 
