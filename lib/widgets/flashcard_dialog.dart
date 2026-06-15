@@ -1,10 +1,10 @@
-import '../services/google_sheets_service.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../services/google_sheets_service.dart';
 import '../models/topic.dart';
 
 class FlashcardDialog extends StatefulWidget {
   final Topic topic;
-
   const FlashcardDialog({super.key, required this.topic});
 
   @override
@@ -13,41 +13,56 @@ class FlashcardDialog extends StatefulWidget {
 
 class _FlashcardDialogState extends State<FlashcardDialog> {
   bool _isExpanded = false;
-  bool _isSubmitting = false; // Add a loading state for the buttons
+  bool _isSubmitting = false;
 
-  // --- THE SPACED REPETITION LOGIC BINDING ---
   Future<void> _submitReview(bool isEasy) async {
     setState(() => _isSubmitting = true);
 
-    // 1. Calculate the math
-    // If Easy: advance a stage. If Hard: drop back to Stage 1.
-    int newStage = isEasy ? widget.topic.currentStage + 1 : 1;
+    try {
+      int newStage = isEasy ? widget.topic.currentStage + 1 : 1;
+      int daysToAdd = isEasy ? (newStage * newStage) : 1;
+      DateTime newDate = DateTime.now().add(Duration(days: daysToAdd));
 
-    // Simple interval math: Stage 1 = 1 day, Stage 2 = 4 days, Stage 3 = 9 days...
-    int daysToAdd = isEasy ? (newStage * newStage) : 1;
-    DateTime newDate = DateTime.now().add(Duration(days: daysToAdd));
+      Topic updatedTopic = Topic(
+        id: widget.topic.id,
+        semester: widget.topic.semester,
+        subject: widget.topic.subject,
+        module: widget.topic.module,
+        topicName: widget.topic.topicName,
+        sourceUrl: widget.topic.sourceUrl,
+        feynmanSeed: widget.topic.feynmanSeed,
+        dateCreated: widget.topic.dateCreated,
+        nextReviewDate: newDate,
+        currentStage: newStage,
+        status: widget.topic.status,
+      );
 
-    // 2. Clone the topic with the new data
-    Topic updatedTopic = Topic(
-      id: widget.topic.id,
-      semester: widget.topic.semester,
-      subject: widget.topic.subject,
-      module: widget.topic.module,
-      topicName: widget.topic.topicName,
-      sourceUrl: widget.topic.sourceUrl,
-      feynmanSeed: widget.topic.feynmanSeed,
-      dateCreated: widget.topic.dateCreated,
-      nextReviewDate: newDate, // NEW!
-      currentStage: newStage, // NEW!
-      status: widget.topic.status,
-    );
+      await GoogleSheetsService.updateTopic(updatedTopic);
 
-    // 3. Push the update to Google Sheets!
-    await GoogleSheetsService.updateTopic(updatedTopic);
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(true);
+      }
+    } catch (e) {
+      print("ERROR updating sheet: $e");
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
 
-    // 4. Close the popup and send a "true" signal back to the dashboard
-    if (mounted) {
-      Navigator.pop(context, true);
+  // Dual-mode web launcher fallback engine
+  Future<void> _launchUrlSafely(String urlString) async {
+    final Uri url = Uri.parse(urlString.trim());
+    try {
+      bool launched = await launchUrl(
+        url,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        await launchUrl(url, mode: LaunchMode.platformDefault);
+      }
+    } catch (e) {
+      print("Could not trigger system web intent launcher: $e");
     }
   }
 
@@ -57,6 +72,7 @@ class _FlashcardDialogState extends State<FlashcardDialog> {
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.all(16),
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: () {
           if (!_isExpanded) setState(() => _isExpanded = true);
         },
@@ -102,29 +118,76 @@ class _FlashcardDialogState extends State<FlashcardDialog> {
                   padding: EdgeInsets.symmetric(vertical: 16.0),
                   child: Divider(color: Colors.grey),
                 ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildResourceIcon(
-                      Icons.link,
-                      'Source',
-                      widget.topic.sourceUrl,
-                    ),
-                    _buildResourceIcon(
-                      Icons.folder,
-                      'Module',
-                      'Mod ${widget.topic.module}',
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
+
+                // --- UPGRADED INTERACTION SAFE ATTACHMENT LIST ---
+                if (widget.topic.sourceUrl.isNotEmpty) ...[
+                  const Text(
+                    "Reference Attachments:",
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: widget.topic.sourceUrl
+                        .split(',')
+                        .where((s) => s.trim().isNotEmpty)
+                        .toList()
+                        .asMap()
+                        .entries
+                        .map((entry) {
+                          int idx = entry.key;
+                          String rawItem = entry.value.trim();
+
+                          String chipTitle = 'Attachment ${idx + 1}';
+                          String linkTarget = rawItem;
+
+                          // Split metadata if separator is found
+                          if (rawItem.contains('|')) {
+                            final splitParts = rawItem.split('|');
+                            chipTitle = splitParts[0];
+                            linkTarget = splitParts[1];
+                          }
+
+                          return Theme(
+                            data: ThemeData(canvasColor: Colors.transparent),
+                            child: ActionChip(
+                              backgroundColor: const Color(0xff2a2a2a),
+                              side: const BorderSide(
+                                color: Colors.blueAccent,
+                                width: 0.5,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              label: Text(
+                                chipTitle,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              avatar: const Icon(
+                                Icons.launch,
+                                color: Colors.blueAccent,
+                                size: 14,
+                              ),
+                              onPressed: () => _launchUrlSafely(linkTarget),
+                            ),
+                          );
+                        })
+                        .toList(),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
                 const Text(
                   "Did you remember this well?",
                   style: TextStyle(color: Colors.white70),
                 ),
                 const SizedBox(height: 16),
 
-                // --- THE UPDATED BUTTONS ---
                 _isSubmitting
                     ? const CircularProgressIndicator(color: Colors.blueAccent)
                     : Row(
@@ -135,7 +198,7 @@ class _FlashcardDialogState extends State<FlashcardDialog> {
                               backgroundColor: Colors.redAccent,
                               foregroundColor: Colors.white,
                             ),
-                            onPressed: () => _submitReview(false), // HARD
+                            onPressed: () => _submitReview(false),
                             icon: const Icon(Icons.thumb_down),
                             label: const Text('Hard'),
                           ),
@@ -144,7 +207,7 @@ class _FlashcardDialogState extends State<FlashcardDialog> {
                               backgroundColor: Colors.greenAccent,
                               foregroundColor: Colors.black,
                             ),
-                            onPressed: () => _submitReview(true), // EASY
+                            onPressed: () => _submitReview(true),
                             icon: const Icon(Icons.thumb_up),
                             label: const Text('Easy'),
                           ),
@@ -161,16 +224,6 @@ class _FlashcardDialogState extends State<FlashcardDialog> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildResourceIcon(IconData icon, String label, String value) {
-    return Column(
-      children: [
-        Icon(icon, color: Colors.white, size: 28),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-      ],
     );
   }
 }

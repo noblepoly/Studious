@@ -1,9 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import '../services/settings_service.dart';
 import '../services/google_sheets_service.dart';
-import '../services/google_drive_service.dart'; // From Phase 4!
+import '../services/google_drive_service.dart';
 import '../models/topic.dart';
 
 class CaptureScreen extends StatefulWidget {
@@ -23,10 +24,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
   String _activeSemester = 'Loading...';
 
-  // Micro-task 6.3.3: Variable to hold the physical file path
-  File? _selectedImage;
+  // --- UPGRADED: MAP ATTACHMENT STRUCTURE ---
+  List<Map<String, dynamic>> _attachments = [];
+  int _photoCount = 0; // Tracks photo increments dynamically
   bool _isPicking = false;
   bool _isUploading = false;
+
+  final ImagePicker _cameraPicker = ImagePicker();
 
   @override
   void initState() {
@@ -43,39 +47,72 @@ class _CaptureScreenState extends State<CaptureScreen> {
     super.dispose();
   }
 
-  // Micro-task 6.3.3: Native hardware file picker trigger
-  Future<void> _pickImage() async {
+  Future<void> _takePhoto() async {
     setState(() => _isPicking = true);
-
     try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.image, // Restrict selection to photos only
+      final XFile? photo = await _cameraPicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 80,
       );
-
-      if (result != null && result.files.single.path != null) {
+      if (photo != null) {
+        _photoCount++;
         setState(() {
-          _selectedImage = File(result.files.single.path!);
+          _attachments.add({
+            'file': File(photo.path),
+            'name': 'Photo $_photoCount',
+          });
         });
-        print("SUCCESS: File captured at path -> ${_selectedImage!.path}");
-      } else {
-        print("User canceled the picker.");
       }
     } catch (e) {
-      print("ERROR: Failed to open system file selector -> $e");
+      print("Camera error: $e");
     } finally {
       setState(() => _isPicking = false);
     }
   }
 
-  // Micro-task 6.3.4: The Background Upload Chain
+  Future<void> _pickFiles() async {
+    setState(() => _isPicking = true);
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'png', 'jpeg', 'pdf'],
+      );
+
+      if (result != null) {
+        setState(() {
+          for (var filePlatform in result.files) {
+            if (filePlatform.path != null) {
+              _attachments.add({
+                'file': File(filePlatform.path!),
+                'name': filePlatform.name, // Grabs the exact native file name!
+              });
+            }
+          }
+        });
+      }
+    } catch (e) {
+      print("File picker error: $e");
+    } finally {
+      setState(() => _isPicking = false);
+    }
+  }
+
+  void _removeAttachment(int index) {
+    setState(() {
+      _attachments.removeAt(index);
+      if (_attachments.isEmpty)
+        _photoCount = 0; // Reset counter if tray cleared
+    });
+  }
+
   Future<void> _submitForm() async {
-    // 1. Check if all text boxes are filled and an image is selected
     if (_formKey.currentState!.validate()) {
-      if (_selectedImage == null) {
+      if (_attachments.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Please attach a reference image of your notes first!',
+              'Please attach at least one reference file or photo!',
             ),
             backgroundColor: Colors.redAccent,
           ),
@@ -83,33 +120,45 @@ class _CaptureScreenState extends State<CaptureScreen> {
         return;
       }
 
-      // 2. Lock the UI and show loading spinner
       setState(() => _isUploading = true);
 
       try {
-        // 1. Generate a unique file name for Google Drive
-        String fileName =
-            'topic_img_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        List<String> serializedPairs = [];
 
-        // 2. Use YOUR exact function, pass both arguments, and accept the String? (nullable)
-        String? imageUrl = await GoogleDriveService.uploadMediaFile(
-          _selectedImage!,
-          fileName,
-        );
+        for (int i = 0; i < _attachments.length; i++) {
+          File file = _attachments[i]['file'];
+          // Cleans the name so commas or pipes in a PDF name don't break our database!
+          String displayName = _attachments[i]['name']
+              .toString()
+              .replaceAll(',', '_')
+              .replaceAll('|', '_');
 
-        // 3. Safety Check: If Drive failed to return a link, stop the process!
-        if (imageUrl == null || imageUrl.isEmpty) {
-          throw Exception("Google Drive failed to return a valid image link.");
+          String extension = file.path.split('.').last;
+          String cloudSecureName =
+              'topic_${DateTime.now().millisecondsSinceEpoch}_$i.$extension';
+
+          String? url = await GoogleDriveService.uploadMediaFile(
+            file,
+            cloudSecureName,
+          );
+          if (url != null && url.isNotEmpty) {
+            // Serialize structural pairing metadata with vertical divider
+            serializedPairs.add('$displayName|$url');
+          }
         }
 
-        // 4. Package all the data into a brand new Topic
+        if (serializedPairs.isEmpty)
+          throw Exception("Failed to upload assets to Drive.");
+
+        String combinedLinks = serializedPairs.join(',');
+
         Topic newTopic = Topic(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           semester: _activeSemester,
           subject: _subjectController.text,
           module: _moduleController.text,
           topicName: _topicNameController.text,
-          sourceUrl: imageUrl, // It is 100% safe to use here now!
+          sourceUrl: combinedLinks,
           feynmanSeed: _feynmanController.text,
           dateCreated: DateTime.now(),
           nextReviewDate: DateTime.now(),
@@ -117,14 +166,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
           status: 'active',
         );
 
-        // 5. Push the new row to Google Sheets
         await GoogleSheetsService.saveNewTopic(newTopic);
 
-        // 6. Success! Show a green message and wipe the form clean.
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Topic saved successfully!'),
+              content: Text('Topic and attachments saved!'),
               backgroundColor: Colors.greenAccent,
             ),
           );
@@ -134,7 +181,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
           _topicNameController.clear();
           _feynmanController.clear();
           setState(() {
-            _selectedImage = null;
+            _attachments.clear();
+            _photoCount = 0;
           });
         }
       } catch (e) {
@@ -147,10 +195,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
           );
         }
       } finally {
-        // 7. Unlock the UI
-        if (mounted) {
-          setState(() => _isUploading = false);
-        }
+        if (mounted) setState(() => _isUploading = false);
       }
     }
   }
@@ -220,10 +265,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-
               _buildTextField(_topicNameController, 'Topic Title', Icons.title),
               const SizedBox(height: 16),
-
               _buildTextField(
                 _feynmanController,
                 'Feynman Summary (Explain it simply...)',
@@ -233,71 +276,156 @@ class _CaptureScreenState extends State<CaptureScreen> {
               ),
               const SizedBox(height: 24),
 
-              // --- DYNAMIC IMAGE PICKER / PREVIEW VIEW BLOCK (6.3.3) ---
-              if (_selectedImage != null) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    height: 200,
-                    width: double.infinity,
-                    color: const Color(0xff1f1f1f),
-                    child: Image.file(_selectedImage!, fit: BoxFit.cover),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextButton.icon(
-                  onPressed: _pickImage,
-                  icon: const Icon(Icons.refresh, color: Colors.grey),
-                  label: const Text(
-                    'Change Image',
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ),
-              ] else ...[
-                OutlinedButton.icon(
-                  onPressed: _isPicking ? null : _pickImage,
-                  icon: _isPicking
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.image_search),
-                  label: Text(
-                    _isPicking
-                        ? 'Opening Gallery...'
-                        : 'Attach Reference Image (Required)',
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 54),
-                    side: BorderSide(color: Colors.grey[700]!),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 32),
-
-              ElevatedButton(
-                onPressed: _submitForm,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 56),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  'Save Topic to Database',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              const Text(
+                "Source Material",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
                 ),
               ),
+              const SizedBox(height: 12),
+
+              if (_attachments.isNotEmpty) ...[
+                SizedBox(
+                  height:
+                      130, // Tall enough to hold thumbnails and labels below them cleanly
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _attachments.length,
+                    itemBuilder: (context, index) {
+                      File file = _attachments[index]['file'];
+                      String name = _attachments[index]['name'];
+                      bool isPdf = file.path.toLowerCase().endsWith('.pdf');
+
+                      return Container(
+                        width: 100,
+                        margin: const EdgeInsets.only(right: 12),
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: Stack(
+                                children: [
+                                  Positioned.fill(
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: isPdf
+                                          ? Container(
+                                              color: const Color(0xff1f1f1f),
+                                              child: const Center(
+                                                child: Icon(
+                                                  Icons.picture_as_pdf,
+                                                  color: Colors.redAccent,
+                                                  size: 40,
+                                                ),
+                                              ),
+                                            )
+                                          : Image.file(file, fit: BoxFit.cover),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: 4,
+                                    right: 4,
+                                    child: GestureDetector(
+                                      onTap: () => _removeAttachment(index),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.black87,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.close,
+                                          color: Colors.white,
+                                          size: 16,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 11,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _isPicking ? null : _takePhoto,
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('Camera'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        side: BorderSide(color: Colors.grey[800]!),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _isPicking ? null : _pickFiles,
+                      icon: const Icon(Icons.folder),
+                      label: const Text('Gallery / PDF'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        side: BorderSide(color: Colors.grey[800]!),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+
+              _isUploading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Colors.blueAccent,
+                      ),
+                    )
+                  : ElevatedButton(
+                      onPressed: _submitForm,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueAccent,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 56),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'Upload ${_attachments.isEmpty ? '' : '(${_attachments.length})'} & Save Topic',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
             ],
           ),
         ),
@@ -330,9 +458,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
         ),
       ),
       validator: (value) {
-        if (isRequired && (value == null || value.isEmpty)) {
+        if (isRequired && (value == null || value.isEmpty))
           return 'Please enter a value';
-        }
         return null;
       },
     );

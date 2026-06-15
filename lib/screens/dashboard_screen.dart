@@ -25,32 +25,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // Fetches data and sorts it into buckets (Micro-task 6.2.2)
   Future<void> _loadDashboardData() async {
     setState(() => _isLoading = true);
+    try {
+      final topics = await GoogleSheetsService.fetchAllTopics();
 
-    final cloudTopics = await GoogleSheetsService.fetchAllTopics();
+      final now = DateTime.now();
+      // Reset the time to midnight so we strictly compare days
+      final today = DateTime(now.year, now.month, now.day);
 
-    // Sort logic: Get today's pure calendar date at midnight
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+      // THE NEW CAP: 7 days from today
+      final nextWeek = today.add(const Duration(days: 7));
 
-    List<Topic> due = [];
-    List<Topic> future = [];
+      setState(() {
+        _dueTopics = topics.where((t) {
+          final reviewDate = DateTime(
+            t.nextReviewDate.year,
+            t.nextReviewDate.month,
+            t.nextReviewDate.day,
+          );
+          // THE FIX: Check if it is 'active' AND due today/past
+          return t.status == 'active' &&
+              (reviewDate.isBefore(today) ||
+                  reviewDate.isAtSameMomentAs(today));
+        }).toList();
 
-    for (var topic in cloudTopics) {
-      // If the review date is today or in the past, it's due!
-      if (topic.nextReviewDate.isBefore(today) ||
-          topic.nextReviewDate.isAtSameMomentAs(today)) {
-        due.add(topic);
-      } else {
-        future.add(topic);
+        _futureTopics = topics.where((t) {
+          final reviewDate = DateTime(
+            t.nextReviewDate.year,
+            t.nextReviewDate.month,
+            t.nextReviewDate.day,
+          );
+          // THE FIX: Check if it is 'active' AND due in the next week
+          return t.status == 'active' &&
+              reviewDate.isAfter(today) &&
+              reviewDate.isBefore(nextWeek);
+        }).toList();
+
+        // Sort both lists so the most urgent ones are at the top
+        _dueTopics.sort((a, b) => a.nextReviewDate.compareTo(b.nextReviewDate));
+        _futureTopics.sort(
+          (a, b) => a.nextReviewDate.compareTo(b.nextReviewDate),
+        );
+      });
+    } catch (e) {
+      print("Error loading dashboard: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
     }
-
-    setState(() {
-      _allTopics = cloudTopics;
-      _dueTopics = due;
-      _futureTopics = future;
-      _isLoading = false;
-    });
   }
 
   @override
