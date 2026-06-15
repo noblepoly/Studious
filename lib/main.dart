@@ -1,3 +1,4 @@
+import 'screens/main_navigation_hub.dart';
 import 'services/settings_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/material.dart';
@@ -26,14 +27,7 @@ class MyApp extends StatelessWidget {
       title: 'Studious',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(), // Unified dark mode theme
-      home: const Scaffold(
-        body: Center(
-          child: Text(
-            'Database Connected Successfully!',
-            style: TextStyle(fontSize: 18, color: Colors.green),
-          ),
-        ),
-      ),
+      home: const MainNavigationHub(), // Renders the new UI skeleton!
     );
   }
 }
