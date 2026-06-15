@@ -1,3 +1,4 @@
+import 'library_screen.dart';
 import 'capture_screen.dart';
 import 'dashboard_screen.dart';
 import 'package:flutter/material.dart';
@@ -18,12 +19,7 @@ class _MainNavigationHubState extends State<MainNavigationHub> {
   final List<Widget> _pages = [
     const DashboardScreen(), // Look! Tab 1 is now real!
     const CaptureScreen(), //Tab 2 is now real!
-    const Center(
-      child: Text(
-        'Tab 3: Master Library View',
-        style: TextStyle(fontSize: 20, color: Colors.white),
-      ),
-    ),
+    const LibraryScreen(), //Tab 3 is now real!
   ];
 
   void _onItemTapped(int index) {
