@@ -1,3 +1,4 @@
+import 'cram_setup_screen.dart';
 import '../widgets/flashcard_dialog.dart';
 import 'package:flutter/material.dart';
 import '../services/google_sheets_service.dart';
@@ -27,6 +28,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() => _isLoading = true);
     try {
       final topics = await GoogleSheetsService.fetchAllTopics();
+      _allTopics = topics.where((t) => t.status == 'active').toList();
 
       final now = DateTime.now();
       // Reset the time to midnight so we strictly compare days
@@ -130,6 +132,75 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Text(
                     '${(healthPercentage * 100).toStringAsFixed(0)}% Mastered',
                     style: const TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // --- THE NEW CRAM MODE LAUNCHER ---
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CramSetupScreen(),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xffff8a00), Color(0xffe52e71)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.orangeAccent.withOpacity(0.3),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(
+                            Icons.local_fire_department,
+                            color: Colors.white,
+                            size: 32,
+                          ),
+                          SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Exam Cram Mode',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  'Review your topics for exam.',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 32),
 
