@@ -1,3 +1,4 @@
+import '../services/engine.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/google_sheets_service.dart';
@@ -19,24 +20,15 @@ class _FlashcardDialogState extends State<FlashcardDialog> {
     setState(() => _isSubmitting = true);
 
     try {
-      int newStage = isEasy ? widget.topic.currentStage + 1 : 1;
-      int daysToAdd = isEasy ? (newStage * newStage) : 1;
-      DateTime newDate = DateTime.now().add(Duration(days: daysToAdd));
+      // 1. Let the official Engine do all the math and create the updated topic!
+      Topic updatedTopic;
+      if (isEasy) {
+        updatedTopic = SpacedRepetitionEngine.processEasy(widget.topic);
+      } else {
+        updatedTopic = SpacedRepetitionEngine.processHard(widget.topic);
+      }
 
-      Topic updatedTopic = Topic(
-        id: widget.topic.id,
-        semester: widget.topic.semester,
-        subject: widget.topic.subject,
-        module: widget.topic.module,
-        topicName: widget.topic.topicName,
-        sourceUrl: widget.topic.sourceUrl,
-        feynmanSeed: widget.topic.feynmanSeed,
-        dateCreated: widget.topic.dateCreated,
-        nextReviewDate: newDate,
-        currentStage: newStage,
-        status: widget.topic.status,
-      );
-
+      // 2. Save it to Google Sheets
       await GoogleSheetsService.updateTopic(updatedTopic);
 
       if (mounted) {

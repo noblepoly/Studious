@@ -161,7 +161,10 @@ class _CaptureScreenState extends State<CaptureScreen> {
           sourceUrl: combinedLinks,
           feynmanSeed: _feynmanController.text,
           dateCreated: DateTime.now(),
-          nextReviewDate: DateTime.now(),
+
+          // THE FIX: Push the very first review to exactly tomorrow!
+          nextReviewDate: DateTime.now().add(const Duration(days: 1)),
+
           currentStage: 1,
           status: 'active',
         );

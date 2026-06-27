@@ -1,8 +1,10 @@
+import '../services/widget_service.dart';
 import 'cram_setup_screen.dart';
 import '../widgets/flashcard_dialog.dart';
 import 'package:flutter/material.dart';
 import '../services/google_sheets_service.dart';
 import '../models/topic.dart';
+import '../services/auth_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -21,6 +23,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _loadDashboardData();
+  }
+
+  // Example implementation pattern for your login triggers:
+  void handleLoginSequence() async {
+    bool loginSuccess = await AuthService.login();
+    if (loginSuccess) {
+      // Smoothly load dashboard arrays from the sheet index
+      _loadDashboardData();
+    } else {
+      // Display error notices
+    }
   }
 
   // Fetches data and sorts it into buckets (Micro-task 6.2.2)
@@ -67,6 +80,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _futureTopics.sort(
           (a, b) => a.nextReviewDate.compareTo(b.nextReviewDate),
         );
+        if (_allTopics.isNotEmpty) {
+          int completed = _allTopics.length - _dueTopics.length;
+          // Calculate as a whole number (e.g., 85 instead of 0.85)
+          int healthInt = ((completed / _allTopics.length) * 100).toInt();
+
+          // Fire it over the bridge!
+          WidgetService.updateHealthWidget(healthInt);
+        }
       });
     } catch (e) {
       print("Error loading dashboard: $e");

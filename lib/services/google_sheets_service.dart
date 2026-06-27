@@ -1,10 +1,12 @@
+import 'dart:io'; // Needed to check Platform.isWindows
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/sheets/v4.dart' as sheets;
 import 'package:http/http.dart' as http;
-import '../models/topic.dart'; // Imports your data structure
+import '../models/topic.dart';
+import 'auth_service.dart'; // Brings in your new Desktop Loopback keys!
 
-// 1. The HTTP Client Wrapper (Built yesterday)
+// 1. The HTTP Client Wrapper
 class GoogleAuthClient extends http.BaseClient {
   final Map<String, String> _headers;
   final http.Client _client = http.Client();
@@ -18,8 +20,10 @@ class GoogleAuthClient extends http.BaseClient {
 }
 
 class GoogleSheetsService {
-  // 2. Define the permissions
+  // 2. Define the permissions (Used as the Mobile Fallback)
   static final _googleSignIn = GoogleSignIn(
+    clientId:
+        '126899395997-t4fdnl9odrlt87l5amtcouksejdqodsf.apps.googleusercontent.com',
     scopes: [
       sheets.SheetsApi.spreadsheetsScope,
       'https://www.googleapis.com/auth/drive.file',
@@ -27,33 +31,50 @@ class GoogleSheetsService {
   );
 
   // 3. Your specific database ID
-  // Make sure to paste your actual Google Sheet ID here!
   static final String _spreadsheetId = dotenv.env['SPREADSHEET_ID']!;
 
   static sheets.SheetsApi? _sheetsApi;
 
-  // 4. The Login & Initialization Function (Built yesterday)
+  // --- THE NEW TRAFFIC COP ---
+  static Future<http.Client?> _getAuthenticatedClient() async {
+    if (Platform.isWindows) {
+      // Windows uses the global Loopback token we caught in AuthService
+      return AuthService.desktopClient;
+    } else {
+      // Mobile checks for the active session, or silently syncs it
+      var user =
+          _googleSignIn.currentUser ?? await _googleSignIn.signInSilently();
+
+      final headers = await user?.authHeaders;
+      if (headers == null) {
+        print("Error: Mobile headers are null. User might not be logged in.");
+        return null;
+      }
+      return GoogleAuthClient(headers);
+    }
+  }
+
+  // 4. The Login & Initialization Function (UPDATED)
   static Future<void> init() async {
     try {
-      final account = await _googleSignIn.signIn();
-      if (account == null) {
-        print("Login Aborted: User closed the prompt.");
+      // Ask the traffic cop for the correct cross-platform keys
+      final client = await _getAuthenticatedClient();
+
+      if (client == null) {
+        print("CRITICAL ERROR: No valid auth token found for database!");
         return;
       }
 
-      final authHeaders = await account.authHeaders;
-      final authClient = GoogleAuthClient(authHeaders);
-
-      _sheetsApi = sheets.SheetsApi(authClient);
-      print("SUCCESS: Connected to Google Sheets as ${account.email}");
+      // Initialize the APIs using the universal client
+      _sheetsApi = sheets.SheetsApi(client);
+      print("SUCCESS: Connected to Google Sheets across all platforms!");
     } catch (e) {
       print("CRITICAL ERROR: Could not connect to Google Sheets -> $e");
     }
   }
 
-  // --- NEW PHASE 4 CRUD METHODS ---
+  // --- CRUD METHODS (These remain exactly the same!) ---
 
-  // Micro-task 4.1.2: Fetch all topics from the cloud
   static Future<List<Topic>> fetchAllTopics() async {
     if (_sheetsApi == null) return [];
 
@@ -71,7 +92,6 @@ class GoogleSheetsService {
     }
   }
 
-  // Micro-task 4.1.3a: Save a new flashcard to the cloud
   static Future<void> saveNewTopic(Topic topic) async {
     if (_sheetsApi == null) return;
 
@@ -90,7 +110,6 @@ class GoogleSheetsService {
     }
   }
 
-  // Micro-task 4.1.3b: Update an existing flashcard
   static Future<void> updateTopic(Topic updatedTopic) async {
     if (_sheetsApi == null) return;
 

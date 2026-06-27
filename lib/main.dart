@@ -1,8 +1,8 @@
-import 'screens/main_navigation_hub.dart';
 import 'services/settings_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/material.dart';
 import 'services/google_sheets_service.dart';
+import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,6 +14,7 @@ void main() async {
 
   // 3. Initialize Google Cloud connection & trigger login flow
   await GoogleSheetsService.init();
+
   runApp(const MyApp());
 }
 
@@ -26,8 +27,9 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Studious',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(), // Unified dark mode theme
-      home: const MainNavigationHub(), // Renders the new UI skeleton!
+      theme: ThemeData.dark(), // Keeps your global theme dark
+      // --- THE ENTRY POINT UPGRADE ---
+      home: const SplashScreen(),
     );
   }
 }
