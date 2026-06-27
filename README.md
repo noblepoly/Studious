@@ -1,17 +1,27 @@
-# studious
+# 🧠 Studious
 
-A new Flutter project.
+A completely custom, cross-platform Spaced Repetition engine built with Flutter. Studious uses Google Sheets as a headless database and Google Drive for cloud asset storage, allowing for a completely decentralized, personal study ecosystem.
 
-## Getting Started
+Currently compiled for **Android** and **Windows Desktop**.
 
-This project is a starting point for a Flutter application.
+## ✨ Features
 
-A few resources to get you started if this is your first Flutter project:
+* **Algorithmic Spaced Repetition:** Custom mathematical engine that calculates review intervals ($Gap = 2^{(stage - 1)}$ days) to optimize memory retention.
+* **Google Cloud Integration:** * **Sheets API:** Acts as the structured database for instant remote mutations.
+    * **Drive API:** Handles direct binary file streaming for reference attachments (PDFs, Images).
+* **Study Health Gamification:** An interactive dashboard with a daily health bar and a custom native Android Home Screen Widget to track daily review completion.
+* **Context-Aware Capture Zone:** "Auto-Folder" logic that binds new entries directly to the active academic semester (e.g., S5, S6) saved securely in device memory.
+* **Exam Cram Mode:** An algorithmic escape hatch to bypass spaced intervals and grind specific modules on demand before a test.
+* **Cross-Platform Sync:** Start reviewing on a Windows PC and finish on an Android phone seamlessly or vice versa.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+---
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 🛠️ Tech Stack
+
+* **Frontend:** Flutter & Dart
+* **Backend/Database:** Google Sheets API v4
+* **Asset Storage:** Google Drive API v3
+* **Local Storage:** `shared_preferences` (App State), `home_widget` (Native Android Widget)
+* **Authentication:** GCP Service Accounts & OAuth
+
+---
